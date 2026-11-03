@@ -114,6 +114,30 @@ directories = [
 ]
 
 
+MAC_OUTPUTS_DIR = "mac_outputs"
+
+
+def save_mac_copy(path):
+    """Save an H.264 + AAC copy of a video in mac_outputs, which plays in
+    QuickTime and is not wiped when the next job clears outputs."""
+    if sys.platform != "darwin" or not (
+        isinstance(path, str) and path.endswith(".mp4")
+    ):
+        return
+    os.makedirs(MAC_OUTPUTS_DIR, exist_ok=True)
+    name = os.path.splitext(os.path.basename(path))[0]
+    stamp = time.strftime("%Y%m%d-%H%M")
+    mac_path = os.path.join(MAC_OUTPUTS_DIR, f"{name}_mac_{stamp}.mp4")
+    try:
+        run_command(
+            f'ffmpeg -y -i "{path}" -c:v h264_videotoolbox -b:v 6M '
+            f'-c:a aac -b:a 192k -movflags +faststart "{mac_path}"'
+        )
+        logger.info(f"Mac copy: {mac_path}")
+    except Exception as error:
+        logger.error(f"Mac copy failed: {error}")
+
+
 class TTS_Info:
     def __init__(self, piper_enabled, xtts_enabled):
         self.list_edge = edge_tts_voices_list()
@@ -368,6 +392,8 @@ class SoniTranslate(SoniTrCache):
 
             if isinstance(output_file, str):
                 output_file = [output_file]
+            for out_path in output_file:
+                save_mac_copy(out_path)
             result.extend(output_file)
 
             if is_gui_arg and len(media_batch) > 1:
