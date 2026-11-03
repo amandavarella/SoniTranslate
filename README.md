@@ -159,6 +159,56 @@ https://github.com/R3gm/SoniTranslate/assets/114810545/6a8ddc65-a46f-4653-9726-6
 
 To run SoniTranslate using Colab Runtime: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/R3gm/SoniTranslate/blob/main/SoniTranslate_Colab.ipynb)
 
+## Install on macOS (Apple Silicon), notes for this fork
+
+This fork runs SoniTranslate on an Apple Silicon Mac without CUDA or conda. Processing runs on the CPU, so a 12 minute video takes roughly 10 to 15 minutes end to end.
+
+### Install
+
+Requires [uv](https://docs.astral.sh/uv/) and ffmpeg (`brew install uv ffmpeg`).
+
+```
+git clone https://github.com/amandavarella/SoniTranslate.git
+cd SoniTranslate
+uv venv --python 3.10 --seed .venv
+.venv/bin/python -m pip install pip==23.1.2 setuptools==80.6.0 wheel
+.venv/bin/python -m pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1
+.venv/bin/python -m pip install -r requirements_base.txt
+.venv/bin/python -m pip install -r requirements_extra.txt
+```
+
+Use the plain macOS PyTorch build and the CPU `onnxruntime` (installed by the requirements). Skip `pytorch-cuda` and `onnxruntime-gpu`.
+
+### Run
+
+```
+OPENAI_API_KEY="sk-..." ./run.sh
+```
+
+Then open http://127.0.0.1:7860. `run.sh` activates `.venv` before starting the app, so the app's shell calls to `python -m yt_dlp` use this environment even when another virtualenv is active in your terminal.
+
+### Settings that work
+
+- **Translation process:** `gpt-4-turbo-preview_batch`. The free Google Translate endpoint blocks home connections with HTTP 429 and a CAPTCHA redirect. The GPT options now call `gpt-4.1-mini`; set `OPENAI_TRANSLATE_MODEL` to use another model.
+- **OpenAI key:** a restricted key with only *Chat completions* set to *Request* is enough. The account needs API credit.
+- **Max speakers:** `1` for single narrator videos. Above 1, speaker diarization needs a Hugging Face token in `YOUR_HF_TOKEN` and the pyannote licences accepted.
+- **TTS Speaker:** an Edge TTS voice for the target language, for example `pt-BR-FranciscaNeural-Female`.
+
+### Output
+
+Each job clears `outputs/`. On macOS the app also saves an H.264 + AAC copy of every finished video to `mac_outputs/<name>_mac_<date-time>.mp4`. The original output uses AV1 video with MP3 audio, which QuickTime plays without sound.
+
+### Changes from upstream
+
+| Change | Why |
+|--------|-----|
+| `run.sh` launcher | The app calls `python -m yt_dlp` through the shell, which picked up whichever virtualenv was active. |
+| Google Translate: 0.5 s spacing and backoff retries on 429 | The batch translator falls back to one request per line with no delay. |
+| GPT translation routed to `gpt-4.1-mini` (`OPENAI_TRANSLATE_MODEL`) | `gpt-4-turbo-preview` returns `model_not_found`. |
+| `httpx==0.27.2` | `openai==1.14.3` passes `proxies`, which httpx 0.28 removed. |
+| `edge_tts==7.3.1` | 7.2.7 gets HTTP 403 from the Edge TTS service. |
+| Mac copy in `mac_outputs/` | QuickTime cannot play the AV1 + MP3 output, and `outputs/` is wiped on every job. |
+
 ## Install Locally (Installation tested in Linux)
 
 ### Before You Start

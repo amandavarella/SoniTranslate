@@ -1,5 +1,6 @@
 from tqdm import tqdm
-from deep_translator import GoogleTranslator
+from deep_translator import GoogleTranslator as _GoogleTranslator
+from deep_translator.exceptions import TooManyRequests
 from itertools import chain
 import copy
 from .language_configuration import fix_code_language, INVERTED_LANGUAGES
@@ -7,6 +8,42 @@ from .logging_setup import logger
 import re
 import json
 import time
+import os
+
+
+# The original GPT models are retired; route them to a current model.
+# Override with OPENAI_TRANSLATE_MODEL.
+OPENAI_DEFAULT_MODEL = "gpt-4.1-mini"
+
+
+def openai_model(model):
+    return os.environ.get("OPENAI_TRANSLATE_MODEL", OPENAI_DEFAULT_MODEL)
+
+
+GOOGLE_MIN_INTERVAL = 0.5  # seconds between Google requests
+GOOGLE_RETRY_WAITS = [5, 15, 30, 60, 120]  # backoff on HTTP 429
+
+
+class GoogleTranslator(_GoogleTranslator):
+    """GoogleTranslator that spaces out requests and retries on 429."""
+
+    _last_call = 0.0
+
+    def translate(self, *args, **kwargs):
+        for wait in GOOGLE_RETRY_WAITS + [None]:
+            elapsed = time.time() - GoogleTranslator._last_call
+            if elapsed < GOOGLE_MIN_INTERVAL:
+                time.sleep(GOOGLE_MIN_INTERVAL - elapsed)
+            GoogleTranslator._last_call = time.time()
+            try:
+                return super().translate(*args, **kwargs)
+            except TooManyRequests:
+                if wait is None:
+                    raise
+                logger.warning(
+                    f"Google Translate rate limit (429), retrying in {wait}s"
+                )
+                time.sleep(wait)
 
 TRANSLATION_PROCESS_OPTIONS = [
     "google_translator_batch",
@@ -442,11 +479,13 @@ def translate_text(
                 fix_code_language(source)
             )
         case model if model in ["gpt-3.5-turbo-0125", "gpt-4-turbo-preview"]:
-            return gpt_sequential(segments, model, target, source)
+            return gpt_sequential(
+                segments, openai_model(model), target, source
+            )
         case model if model in ["gpt-3.5-turbo-0125_batch", "gpt-4-turbo-preview_batch",]:
             return gpt_batch(
                 segments,
-                translation_process.replace("_batch", ""),
+                openai_model(translation_process.replace("_batch", "")),
                 target,
                 token_batch_limit,
                 source
